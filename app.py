@@ -110,19 +110,33 @@ with col1:
 # -------------------------
 # 4. Enhanced Fact Checking via Wikipedia
 # -------------------------
+import spacy
+import wikipediaapi
+
+# Load spaCy model
+nlp = spacy.load("en_core_web_sm")
+
 with col2:
     if st.button("🔎 Fact Check (Wikipedia)"):
         if news_input.strip() == "":
             st.warning("⚠️ Please enter some text first.")
         else:
             try:
-                # Improved subject detection: take first 3-5 words or capitalized words
-                words = news_input.split()
-                subject_words = [w for w in words if w[0].isupper()]
-                if not subject_words:
-                    subject_words = words[:3]  # fallback to first 3 words
-                subject = " ".join(subject_words)
+                # -------------------------
+                # 1. Extract subject using NER
+                # -------------------------
+                doc = nlp(news_input)
+                entities = [ent.text for ent in doc.ents]
 
+                if entities:
+                    subject = entities[0]  # pick first named entity
+                else:
+                    # fallback: first 3 words capitalized
+                    subject = " ".join([w.capitalize() for w in news_input.split()[:3]])
+
+                # -------------------------
+                # 2. Wikipedia Query
+                # -------------------------
                 wiki = wikipediaapi.Wikipedia(
                     language="en",
                     user_agent="FakeNewsDetectorApp/1.0 (contact: your-email@example.com)"
@@ -135,11 +149,15 @@ with col2:
                     summary = page.summary[:600].lower()  # first 600 chars
                     input_words = news_input.lower().split()
 
-                    # Word overlap similarity
+                    # -------------------------
+                    # 3. Word-overlap similarity
+                    # -------------------------
                     matched = sum([1 for w in input_words if w in summary])
                     similarity = matched / len(input_words) if input_words else 0
 
-                    # Sensitive word check
+                    # -------------------------
+                    # 4. Sensitive word check
+                    # -------------------------
                     sensitive_words = ["dead", "death", "died", "murdered", "killed"]
                     if any(word in news_input.lower() for word in sensitive_words):
                         if not any(word in summary for word in sensitive_words):
