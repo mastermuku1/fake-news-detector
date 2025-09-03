@@ -116,21 +116,28 @@ with col2:
             st.warning("⚠️ Please enter some text first.")
         else:
             try:
-                # Use first 3 words as subject guess
-                subject = " ".join(news_input.split()[:3])
+                # Improved subject detection: take first 3-5 words or capitalized words
+                words = news_input.split()
+                subject_words = [w for w in words if w[0].isupper()]
+                if not subject_words:
+                    subject_words = words[:3]  # fallback to first 3 words
+                subject = " ".join(subject_words)
 
-                wiki = wikipediaapi.Wikipedia("en")
+                wiki = wikipediaapi.Wikipedia(
+                    language="en",
+                    user_agent="FakeNewsDetectorApp/1.0 (contact: your-email@example.com)"
+                )
                 page = wiki.page(subject)
 
                 if not page.exists():
                     st.error("❌ Could not find this topic on Wikipedia.")
                 else:
                     summary = page.summary[:600].lower()  # first 600 chars
-                    words = news_input.lower().split()
+                    input_words = news_input.lower().split()
 
                     # Word overlap similarity
-                    matched = sum([1 for w in words if w in summary])
-                    similarity = matched / len(words) if words else 0
+                    matched = sum([1 for w in input_words if w in summary])
+                    similarity = matched / len(input_words) if input_words else 0
 
                     # Sensitive word check
                     sensitive_words = ["dead", "death", "died", "murdered", "killed"]
@@ -148,7 +155,7 @@ with col2:
                             st.error(f"❌ Possibly FALSE (Confidence: Low, {similarity:.0%} word match)")
 
                     with st.expander("📖 Wikipedia Reference"):
-                        st.info(summary)
+                        st.info(page.summary[:600])
 
             except Exception as e:
                 st.warning(f"⚠️ Could not verify (Error: {e})")
