@@ -71,18 +71,16 @@ news_input = st.text_area("✍️ Enter News Text Here:", height=150, placeholde
 # Load spaCy model once
 # -------------------------
 import spacy
-from spacy.cli import download
 
-try:
-    nlp = spacy.load("en_core_web_sm")
-except OSError:
-    download("en_core_web_sm")
-    nlp = spacy.load("en_core_web_sm")
+# On Streamlit Cloud, model must be preinstalled via requirements.txt
+# Locally, if missing, you can still install it once with: python -m spacy download en_core_web_sm
+nlp = spacy.load("en_core_web_sm")
 
 # -------------------------
 # Layout for buttons
 # -------------------------
 col1, col2 = st.columns(2)
+
 
 # -------------------------
 # 3. Fake News Classification
