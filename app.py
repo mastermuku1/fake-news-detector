@@ -111,6 +111,18 @@ with col1:
 # 4. Enhanced Fact Checking via Wikipedia
 # -------------------------
 import spacy
+from spacy.cli import download
+
+# Download the English model if not present
+try:
+    nlp = spacy.load("en_core_web_sm")
+except OSError:
+    download("en_core_web_sm")
+    nlp = spacy.load("en_core_web_sm")
+
+
+
+import spacy
 import wikipediaapi
 
 # Load spaCy model
