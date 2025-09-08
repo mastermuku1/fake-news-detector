@@ -12,9 +12,8 @@ from sklearn.ensemble import RandomForestClassifier
 
 # Language detection + translation
 from langdetect import detect
-from googletrans import Translator
+from deep_translator import GoogleTranslator
 
-translator = Translator()
 
 # -------------------------
 # 1. Load & Train Models
@@ -73,6 +72,7 @@ st.markdown("### Paste any news article or claim to check if it's **Fake or Real
 # User input
 news_input = st.text_area("✍️ Enter News Text Here:", height=150, placeholder="Type or paste news text...")
 
+
 # -------------------------
 # 3. Helper Functions
 # -------------------------
@@ -90,7 +90,7 @@ def detect_and_translate(text):
         detected_lang = "en"
 
     if detected_lang != "en":
-        translated = translator.translate(text, src=detected_lang, dest="en").text
+        translated = GoogleTranslator(source=detected_lang, target="en").translate(text)
     else:
         translated = text
 
@@ -155,7 +155,7 @@ with col2:
                         user_agent="FakeNewsDetectorApp/1.0 (contact: your-email@example.com)"
                     )
 
-                    # Use first few words as subject (NER would require language models)
+                    # Use first few words as subject
                     subject = " ".join(news_input.split()[:5])
 
                     page = wiki.page(subject)
