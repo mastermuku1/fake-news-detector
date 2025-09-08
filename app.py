@@ -1,5 +1,6 @@
 import streamlit as st
 st.set_page_config(page_title="Fake News Detector", page_icon="📰", layout="wide")
+
 import pandas as pd
 import re
 import wikipediaapi
@@ -8,6 +9,12 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression, PassiveAggressiveClassifier
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.ensemble import RandomForestClassifier
+
+# Language detection + translation
+from langdetect import detect
+from googletrans import Translator
+
+translator = Translator()
 
 # -------------------------
 # 1. Load & Train Models
@@ -19,10 +26,10 @@ def load_models():
     # Convert labels to numeric
     data["label"] = data["label"].map({"REAL": 1, "FAKE": 0})
 
-    # Clean text
+    # Clean text (allow unicode letters)
     def clean_text(text):
         text = str(text).lower()
-        text = re.sub(r"[^a-zA-Z\s]", "", text)
+        text = re.sub(r"[^\w\s]", "", text, flags=re.UNICODE)  # keep all words
         return text
 
     data["text"] = data["text"].apply(clean_text)
@@ -60,31 +67,41 @@ models, vectorizer = load_models()
 # 2. Streamlit UI
 # -------------------------
 
-
-st.title("📰 Fake News & Fact Checker")
+st.title("📰 Fake News & Fact Checker (Multi-Language)")
 st.markdown("### Paste any news article or claim to check if it's **Fake or Real** using ML models, or verify facts with **Wikipedia**.")
 
 # User input
 news_input = st.text_area("✍️ Enter News Text Here:", height=150, placeholder="Type or paste news text...")
 
 # -------------------------
-# Load spaCy model once
+# 3. Helper Functions
 # -------------------------
-import spacy
 
-# On Streamlit Cloud, model must be preinstalled via requirements.txt
-# Locally, if missing, you can still install it once with: python -m spacy download en_core_web_sm
-nlp = spacy.load("en_core_web_sm")
+def clean_text(text):
+    text = str(text).lower()
+    text = re.sub(r"[^\w\s]", "", text, flags=re.UNICODE)
+    return text
+
+
+def detect_and_translate(text):
+    try:
+        detected_lang = detect(text)
+    except:
+        detected_lang = "en"
+
+    if detected_lang != "en":
+        translated = translator.translate(text, src=detected_lang, dest="en").text
+    else:
+        translated = text
+
+    return detected_lang, translated
+
 
 # -------------------------
-# Layout for buttons
+# 4. Fake News Classification
 # -------------------------
+
 col1, col2 = st.columns(2)
-
-
-# -------------------------
-# 3. Fake News Classification
-# -------------------------
 
 with col1:
     if st.button("🚀 Check Fake/Real"):
@@ -93,12 +110,9 @@ with col1:
         elif len(news_input.split()) < 10:
             st.warning("⚠️ Text is too short to classify reliably. Please enter a longer article or headline.")
         else:
-            def clean_text(text):
-                text = str(text).lower()
-                text = re.sub(r"[^a-zA-Z\s]", "", text)
-                return text
+            detected_lang, translated_text = detect_and_translate(news_input)
 
-            cleaned = clean_text(news_input)
+            cleaned = clean_text(translated_text)
             vectorized = vectorizer.transform([cleaned])
 
             results = {}
@@ -117,14 +131,14 @@ with col1:
 
             st.subheader("🗳️ Final Verdict")
             if final == "✅ Real":
-                st.success("This news looks **Real** ✅")
+                st.success(f"This news looks **Real** ✅ (Language detected: {detected_lang.upper()})")
             else:
-                st.error("This news looks **Fake** ❌")
+                st.error(f"This news looks **Fake** ❌ (Language detected: {detected_lang.upper()})")
+
 
 # -------------------------
-# 4. Enhanced Fact Checking via Wikipedia
+# 5. Enhanced Fact Checking via Wikipedia
 # -------------------------
-
 
 with col2:
     if st.button("🔎 Fact Check (Wikipedia)"):
@@ -133,21 +147,21 @@ with col2:
         else:
             with st.spinner("🔎 Checking Wikipedia..."):
                 try:
-                    doc = nlp(news_input)
-                    entities = [ent.text for ent in doc.ents]
-                    if entities:
-                        subject = entities[0]
-                    else:
-                        subject = " ".join([w.capitalize() for w in news_input.split()[:3]])
+                    detected_lang, translated_text = detect_and_translate(news_input)
 
+                    # Use Wikipedia in detected language
                     wiki = wikipediaapi.Wikipedia(
-                        language="en",
+                        language=detected_lang,
                         user_agent="FakeNewsDetectorApp/1.0 (contact: your-email@example.com)"
                     )
+
+                    # Use first few words as subject (NER would require language models)
+                    subject = " ".join(news_input.split()[:5])
+
                     page = wiki.page(subject)
 
                     if not page.exists():
-                        st.error("❌ Could not find this topic on Wikipedia.")
+                        st.error(f"❌ Could not find this topic on Wikipedia ({detected_lang.upper()}).")
                     else:
                         summary = page.summary[:600].lower()
                         input_words = news_input.lower().split()
