@@ -101,45 +101,9 @@ def detect_and_translate(text):
 # 4. Fake News Classification
 # -------------------------
 
-col1, col2 = st.columns(2)
-
-with col1:
-    if st.button("🚀 Check Fake/Real"):
-        if news_input.strip() == "":
-            st.warning("⚠️ Please enter some news text first.")
-        elif len(news_input.split()) < 10:
-            st.warning("⚠️ Text is too short to classify reliably. Please enter a longer article or headline.")
-        else:
-            detected_lang, translated_text = detect_and_translate(news_input)
-
-            cleaned = clean_text(translated_text)
-            vectorized = vectorizer.transform([cleaned])
-
-            results = {}
-            for name, clf in models.items():
-                pred = clf.predict(vectorized)[0]
-                results[name] = "✅ Real" if pred == 1 else "❌ Fake"
-
-            # Show results
-            with st.expander("🔍 Model Predictions"):
-                for model_name, prediction in results.items():
-                    st.write(f"**{model_name}:** {prediction}")
-
-            # Majority voting
-            votes = [1 if v == "✅ Real" else 0 for v in results.values()]
-            final = "✅ Real" if sum(votes) >= 2 else "❌ Fake"
-
-            st.subheader("🗳️ Final Verdict")
-            if final == "✅ Real":
-                st.success(f"This news looks **Real** ✅ (Language detected: {detected_lang.upper()})")
-            else:
-                st.error(f"This news looks **Fake** ❌ (Language detected: {detected_lang.upper()})")
-
-
 # -------------------------
 # 5. Enhanced Fact Checking via Wikipedia
 # -------------------------
-
 with col2:
     if st.button("🔎 Fact Check (Wikipedia)"):
         if news_input.strip() == "":
@@ -149,28 +113,33 @@ with col2:
                 try:
                     detected_lang, translated_text = detect_and_translate(news_input)
 
-                    # Use Wikipedia in detected language
+                    # Initialize Wikipedia API
                     wiki = wikipediaapi.Wikipedia(
                         language=detected_lang,
                         user_agent="FakeNewsDetectorApp/1.0 (contact: your-email@example.com)"
                     )
 
-                    # Use first few words as subject
-                    subject = " ".join(news_input.split()[:5])
-
+                    # Use full translated text as subject
+                    subject = translated_text.strip()
                     page = wiki.page(subject)
+
+                    # If page not found, try wikipedia.search()
+                    if not page.exists():
+                        search_results = wikipedia.search(translated_text, results=1)
+                        if search_results:
+                            page = wiki.page(search_results[0])
 
                     if not page.exists():
                         st.error(f"❌ Could not find this topic on Wikipedia ({detected_lang.upper()}).")
                     else:
                         summary = page.summary[:600].lower()
-                        input_words = news_input.lower().split()
+                        input_words = translated_text.lower().split()
 
                         matched = sum([1 for w in input_words if w in summary])
                         similarity = matched / len(input_words) if input_words else 0
 
                         sensitive_words = ["dead", "death", "died", "murdered", "killed"]
-                        if any(word in news_input.lower() for word in sensitive_words):
+                        if any(word in translated_text.lower() for word in sensitive_words):
                             if not any(word in summary for word in sensitive_words):
                                 st.error("❌ This claim is FALSE (contradicts Wikipedia)")
                             else:
@@ -188,3 +157,4 @@ with col2:
 
                 except Exception as e:
                     st.warning(f"⚠️ Could not verify (Error: {e})")
+
