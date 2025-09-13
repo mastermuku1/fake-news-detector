@@ -14,7 +14,7 @@ from sklearn.ensemble import RandomForestClassifier
 # Language detection + translation
 from langdetect import detect
 from deep_translator import GoogleTranslator
-
+from rapidfuzz import process   # for fuzzy matching
 
 # -------------------------
 # 1. Load & Train Models
@@ -94,6 +94,13 @@ def detect_and_translate(text):
 
     return detected_lang, translated
 
+def best_wiki_match(query):
+    """Find best Wikipedia match using search + fuzzy matching"""
+    results = wikipedia.search(query, results=5)
+    if results:
+        best = process.extractOne(query, results)[0]
+        return best
+    return None
 
 # -------------------------
 # 4 & 5. Fake News Classification + Wikipedia Fact Check
@@ -143,24 +150,21 @@ with col2:
                 try:
                     detected_lang, translated_text = detect_and_translate(news_input)
 
+                    # Try fuzzy match first
+                    subject = best_wiki_match(translated_text)
+                    if subject is None:
+                        subject = translated_text.strip()
+
                     # Initialize Wikipedia API
                     wiki = wikipediaapi.Wikipedia(
-                        language=detected_lang,
+                        language="en",  # always use English Wikipedia for reliability
                         user_agent="FakeNewsDetectorApp/1.0 (contact: your-email@example.com)"
                     )
 
-                    # Use full translated text as subject
-                    subject = translated_text.strip()
                     page = wiki.page(subject)
 
-                    # If page not found, try wikipedia.search()
                     if not page.exists():
-                        search_results = wikipedia.search(translated_text, results=1)
-                        if search_results:
-                            page = wiki.page(search_results[0])
-
-                    if not page.exists():
-                        st.error(f"❌ Could not find this topic on Wikipedia ({detected_lang.upper()}).")
+                        st.error(f"❌ Could not find this topic on Wikipedia.")
                     else:
                         summary = page.summary[:600].lower()
                         input_words = translated_text.lower().split()

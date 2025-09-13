@@ -6,4 +6,4 @@ wikipedia
 numpy
 langdetect
 deep-translator
-
+rapidfuzz
