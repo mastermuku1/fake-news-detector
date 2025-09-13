@@ -4,6 +4,7 @@ st.set_page_config(page_title="Fake News Detector", page_icon="📰", layout="wi
 import pandas as pd
 import re
 import wikipediaapi
+import wikipedia
 from sklearn.model_selection import train_test_split
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression, PassiveAggressiveClassifier
@@ -25,10 +26,10 @@ def load_models():
     # Convert labels to numeric
     data["label"] = data["label"].map({"REAL": 1, "FAKE": 0})
 
-    # Clean text (allow unicode letters)
+    # Clean text
     def clean_text(text):
         text = str(text).lower()
-        text = re.sub(r"[^\w\s]", "", text, flags=re.UNICODE)  # keep all words
+        text = re.sub(r"[^\w\s]", "", text, flags=re.UNICODE)
         return text
 
     data["text"] = data["text"].apply(clean_text)
@@ -65,7 +66,6 @@ models, vectorizer = load_models()
 # -------------------------
 # 2. Streamlit UI
 # -------------------------
-
 st.title("📰 Fake News & Fact Checker (Multi-Language)")
 st.markdown("### Paste any news article or claim to check if it's **Fake or Real** using ML models, or verify facts with **Wikipedia**.")
 
@@ -76,12 +76,10 @@ news_input = st.text_area("✍️ Enter News Text Here:", height=150, placeholde
 # -------------------------
 # 3. Helper Functions
 # -------------------------
-
 def clean_text(text):
     text = str(text).lower()
     text = re.sub(r"[^\w\s]", "", text, flags=re.UNICODE)
     return text
-
 
 def detect_and_translate(text):
     try:
@@ -98,12 +96,44 @@ def detect_and_translate(text):
 
 
 # -------------------------
-# 4. Fake News Classification
+# 4 & 5. Fake News Classification + Wikipedia Fact Check
 # -------------------------
+col1, col2 = st.columns(2)
 
-# -------------------------
-# 5. Enhanced Fact Checking via Wikipedia
-# -------------------------
+# Fake/Real Classification
+with col1:
+    if st.button("🚀 Check Fake/Real"):
+        if news_input.strip() == "":
+            st.warning("⚠️ Please enter some news text first.")
+        elif len(news_input.split()) < 10:
+            st.warning("⚠️ Text is too short to classify reliably. Please enter a longer article or headline.")
+        else:
+            detected_lang, translated_text = detect_and_translate(news_input)
+
+            cleaned = clean_text(translated_text)
+            vectorized = vectorizer.transform([cleaned])
+
+            results = {}
+            for name, clf in models.items():
+                pred = clf.predict(vectorized)[0]
+                results[name] = "✅ Real" if pred == 1 else "❌ Fake"
+
+            # Show results
+            with st.expander("🔍 Model Predictions"):
+                for model_name, prediction in results.items():
+                    st.write(f"**{model_name}:** {prediction}")
+
+            # Majority voting
+            votes = [1 if v == "✅ Real" else 0 for v in results.values()]
+            final = "✅ Real" if sum(votes) >= 2 else "❌ Fake"
+
+            st.subheader("🗳️ Final Verdict")
+            if final == "✅ Real":
+                st.success(f"This news looks **Real** ✅ (Language detected: {detected_lang.upper()})")
+            else:
+                st.error(f"This news looks **Fake** ❌ (Language detected: {detected_lang.upper()})")
+
+# Wikipedia Fact Check
 with col2:
     if st.button("🔎 Fact Check (Wikipedia)"):
         if news_input.strip() == "":
@@ -157,4 +187,3 @@ with col2:
 
                 except Exception as e:
                     st.warning(f"⚠️ Could not verify (Error: {e})")
-
