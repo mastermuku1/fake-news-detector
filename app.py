@@ -4,6 +4,7 @@ st.set_page_config(page_title="Fake News Detector", page_icon="📰", layout="wi
 import pandas as pd
 import re
 import wikipediaapi
+import wikipedia
 from sklearn.model_selection import train_test_split
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression, PassiveAggressiveClassifier
@@ -25,10 +26,10 @@ def load_models():
     # Convert labels to numeric
     data["label"] = data["label"].map({"REAL": 1, "FAKE": 0})
 
-    # Clean text (allow unicode letters)
+    # Clean text
     def clean_text(text):
         text = str(text).lower()
-        text = re.sub(r"[^\w\s]", "", text, flags=re.UNICODE)  # keep all words
+        text = re.sub(r"[^\w\s]", "", text, flags=re.UNICODE)
         return text
 
     data["text"] = data["text"].apply(clean_text)
@@ -65,25 +66,20 @@ models, vectorizer = load_models()
 # -------------------------
 # 2. Streamlit UI
 # -------------------------
-
 st.title("📰 Fake News & Fact Checker (Multi-Language)")
 st.markdown("### Paste any news article or claim to check if it's **Fake or Real** using ML models, or verify facts with **Wikipedia**.")
 
 # User input
 news_input = st.text_area("✍️ Enter News Text Here:", height=150, placeholder="Type or paste news text...")
 
-# Create two columns
-col1, col2 = st.columns(2)
 
 # -------------------------
 # 3. Helper Functions
 # -------------------------
-
 def clean_text(text):
     text = str(text).lower()
     text = re.sub(r"[^\w\s]", "", text, flags=re.UNICODE)
     return text
-
 
 def detect_and_translate(text):
     try:
@@ -99,18 +95,45 @@ def detect_and_translate(text):
     return detected_lang, translated
 
 
-def extract_years(text):
-    """Extract all 4-digit years from text"""
-    return set(re.findall(r"\b\d{4}\b", text))
+# -------------------------
+# 4 & 5. Fake News Classification + Wikipedia Fact Check
+# -------------------------
+col1, col2 = st.columns(2)
 
+# Fake/Real Classification
+with col1:
+    if st.button("🚀 Check Fake/Real"):
+        if news_input.strip() == "":
+            st.warning("⚠️ Please enter some news text first.")
+        elif len(news_input.split()) < 10:
+            st.warning("⚠️ Text is too short to classify reliably. Please enter a longer article or headline.")
+        else:
+            detected_lang, translated_text = detect_and_translate(news_input)
 
-# -------------------------
-# 4. Fake News Classification (future expansion)
-# -------------------------
+            cleaned = clean_text(translated_text)
+            vectorized = vectorizer.transform([cleaned])
 
-# -------------------------
-# 5. Enhanced Fact Checking via Wikipedia
-# -------------------------
+            results = {}
+            for name, clf in models.items():
+                pred = clf.predict(vectorized)[0]
+                results[name] = "✅ Real" if pred == 1 else "❌ Fake"
+
+            # Show results
+            with st.expander("🔍 Model Predictions"):
+                for model_name, prediction in results.items():
+                    st.write(f"**{model_name}:** {prediction}")
+
+            # Majority voting
+            votes = [1 if v == "✅ Real" else 0 for v in results.values()]
+            final = "✅ Real" if sum(votes) >= 2 else "❌ Fake"
+
+            st.subheader("🗳️ Final Verdict")
+            if final == "✅ Real":
+                st.success(f"This news looks **Real** ✅ (Language detected: {detected_lang.upper()})")
+            else:
+                st.error(f"This news looks **Fake** ❌ (Language detected: {detected_lang.upper()})")
+
+# Wikipedia Fact Check
 with col2:
     if st.button("🔎 Fact Check (Wikipedia)"):
         if news_input.strip() == "":
@@ -130,36 +153,34 @@ with col2:
                     subject = translated_text.strip()
                     page = wiki.page(subject)
 
+                    # If page not found, try wikipedia.search()
+                    if not page.exists():
+                        search_results = wikipedia.search(translated_text, results=1)
+                        if search_results:
+                            page = wiki.page(search_results[0])
+
                     if not page.exists():
                         st.error(f"❌ Could not find this topic on Wikipedia ({detected_lang.upper()}).")
                     else:
                         summary = page.summary[:600].lower()
                         input_words = translated_text.lower().split()
 
-                        # ✅ Step 1: year/date check
-                        input_years = extract_years(translated_text)
-                        summary_years = extract_years(summary)
+                        matched = sum([1 for w in input_words if w in summary])
+                        similarity = matched / len(input_words) if input_words else 0
 
-                        if input_years and not (input_years & summary_years):
-                            st.error("❌ This claim is FALSE (date mismatch with Wikipedia)")
-                        else:
-                            # ✅ Step 2: similarity check
-                            matched = sum([1 for w in input_words if w in summary])
-                            similarity = matched / len(input_words) if input_words else 0
-
-                            sensitive_words = ["dead", "death", "died", "murdered", "killed"]
-                            if any(word in translated_text.lower() for word in sensitive_words):
-                                if not any(word in summary for word in sensitive_words):
-                                    st.error("❌ This claim is FALSE (contradicts Wikipedia)")
-                                else:
-                                    st.success("✅ This claim may be TRUE (Wikipedia confirms)")
+                        sensitive_words = ["dead", "death", "died", "murdered", "killed"]
+                        if any(word in translated_text.lower() for word in sensitive_words):
+                            if not any(word in summary for word in sensitive_words):
+                                st.error("❌ This claim is FALSE (contradicts Wikipedia)")
                             else:
-                                if similarity > 0.35:
-                                    st.success(f"✅ Likely TRUE (Confidence: High, {similarity:.0%} word match)")
-                                elif similarity > 0.20:
-                                    st.warning(f"⚠️ Unclear (Confidence: Medium, {similarity:.0%} word match)")
-                                else:
-                                    st.error(f"❌ Possibly FALSE (Confidence: Low, {similarity:.0%} word match)")
+                                st.success("✅ This claim may be TRUE (Wikipedia confirms)")
+                        else:
+                            if similarity > 0.35:
+                                st.success(f"✅ Likely TRUE (Confidence: High, {similarity:.0%} word match)")
+                            elif similarity > 0.20:
+                                st.warning(f"⚠️ Unclear (Confidence: Medium, {similarity:.0%} word match)")
+                            else:
+                                st.error(f"❌ Possibly FALSE (Confidence: Low, {similarity:.0%} word match)")
 
                         with st.expander("📖 Wikipedia Reference"):
                             st.info(page.summary[:600])
